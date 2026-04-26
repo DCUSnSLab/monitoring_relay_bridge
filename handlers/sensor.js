@@ -1,6 +1,8 @@
-// vehicle sensor data 관련
+const { makeTopicKey } = require('../managers/subscriptionManager');
 
-function handleSensorData(ws, message, vehicles, users, subscriptions) {
+// vehicle sensor data 관리
+
+function handleSensorData(ws, message, vehicles, users, topicSubscribers) {
     if (ws.clientInfo.role !== 'vehicle') {
         console.log('Only vehicles can send sensor data');
         return;
@@ -12,23 +14,27 @@ function handleSensorData(ws, message, vehicles, users, subscriptions) {
     }
 
     const vehicleId = ws.clientInfo.id;
+    const topic = message.topic;
+    const topicKey = makeTopicKey(vehicleId, topic);
 
     const session = vehicles.get(vehicleId);
     if (session) {
         session.last_seen = Date.now();
     }
 
-    const subs = subscriptions.get(vehicleId);
+    const subs = topicSubscribers.get(topicKey);
 
-    if (!subs) return;
+    if (!subs || subs.size === 0) {
+        return;
+    }
 
     const payload = JSON.stringify({
         ...message,
         vehicle_id: vehicleId
     });
 
-    for (const userId of subs) {
-        const userWs = users.get(userId);
+    for (const sessionId of subs) {
+        const userWs = users.get(sessionId);
 
         if (userWs && userWs.readyState === 1) {
             userWs.send(payload);

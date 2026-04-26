@@ -1,75 +1,121 @@
-// subscribe, unsubscribe
+const { makeTopicKey } = require('../managers/subscriptionManager');
 
-// 구독 등록
-function handleSubscribe(ws, message, vehicles, subscriptions, users, topicCache) {
+function handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions, users, topicCache) {
     if (ws.clientInfo.role !== 'user') {
         console.log("Only users can subscribe");
         return;
     }
 
-    if (!message.vehicle_id) {
-        console.log("Subscribe message missing vehicle_id");
+    if (!message.vehicle_id || !message.topic || !message.msg_type) {
+        console.log("Subscribe message missing vehicle_id/topic/msg_type");
         return;
     }
 
     const vehicleId = message.vehicle_id;
-    const userId = ws.clientInfo.id;
+    const topic = message.topic;
+    const msgType = message.msg_type;
+    const sessionId = ws.clientInfo.id;
+    const topicKey = makeTopicKey(vehicleId, topic);
 
     if (!vehicles.has(vehicleId)) {
         console.log(`Vehicle not found: ${vehicleId}`);
         return;
     }
 
-    if (!subscriptions.has(vehicleId)) {
-        subscriptions.set(vehicleId, new Set());
+    if (!topicSubscribers.has(topicKey)) {
+        topicSubscribers.set(topicKey, new Set());
     }
 
-    const subs = subscriptions.get(vehicleId);
+    const subs = topicSubscribers.get(topicKey);
 
-    if (!subs.has(userId)) {
-        subs.add(userId);
-        console.log(`User ${userId} subscribed to ${vehicleId}`);
+    if (subs.has(sessionId)) {
+        console.log(`Session ${sessionId} already subscribed to ${topicKey}`);
+        return;
     }
-    console.log(`Subscribers: (${subs.size}) ${[...subs]}`);
 
-    const topics = topicCache.get(vehicleId);
+    subs.add(sessionId);
+    console.log(`Session ${sessionId} subscribed to ${topicKey}`);
+    console.log(`Subscribers for ${topicKey}: (${subs.size}) ${[...subs]}`);
 
-    if (topics) {
-        ws.send(JSON.stringify({
-            type: 'topic_list',
-            vehicle_id: vehicleId,
-            topics
-        }));
-
-        console.log("📤 캐시된 topic_list 전송");
+    if (!upstreamSubscriptions.has(topicKey)) {
+        upstreamSubscriptions.set(topicKey, {
+            vehicleId,
+            topic,
+            msgType,
+            refCount: 0,
+        });
     }
+
+    const upstream = upstreamSubscriptions.get(topicKey);
+
+    if (upstream.refCount === 0) {
+        const vehicle = vehicles.get(vehicleId);
+
+        if (vehicle && vehicle.ws) {
+            vehicle.ws.send(JSON.stringify({
+                type: "subscribe_topic",
+                topic,
+                msg_type: msgType,
+            }));
+
+            console.log(`📡 vehicle로 subscribe 전달: ${topicKey}`);
+        }
+    }
+
+    upstream.refCount += 1;
+    console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
 }
 
-function handleUnsubscribe(ws, message, subscriptions) {
+function handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions) {
     if (ws.clientInfo.role !== 'user') {
         return;
     }
 
-    if (!message.vehicle_id) {
-        console.log("Subscribe message missing vehicle_id");
+    if (!message.vehicle_id || !message.topic) {
+        console.log("Unsubscribe message missing vehicle_id/topic");
         return;
     }
 
     const vehicleId = message.vehicle_id;
-    const userId = ws.clientInfo.id;
+    const topic = message.topic;
+    const sessionId = ws.clientInfo.id;
+    const topicKey = makeTopicKey(vehicleId, topic);
 
-    if (subscriptions.has(vehicleId)) {
-        const subs = subscriptions.get(vehicleId);
-        subs.delete(userId);
+    const subs = topicSubscribers.get(topicKey);
+    if (!subs || !subs.has(sessionId)) {
+        console.log(`Session ${sessionId} is not subscribed to ${topicKey}`);
+        return;
+    }
 
-        console.log(`User ${userId} unsubscribed from ${vehicleId}`);
-        console.log(`Subscribers: (${subs.size}) ${[...subs]}`);
+    subs.delete(sessionId);
+    console.log(`Session ${sessionId} unsubscribed from ${topicKey}`);
 
-        if (subs.size === 0) {
-            subscriptions.delete(vehicleId);
+    const upstream = upstreamSubscriptions.get(topicKey);
+    if (upstream) {
+        upstream.refCount -= 1;
+        console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
+
+        if (upstream.refCount <= 0) {
+            upstreamSubscriptions.delete(topicKey);
+            console.log(`Upstream subscription removed: ${topicKey}`);
+
+            const vehicle = vehicles.get(vehicleId);
+            if (vehicle && vehicle.ws) {
+                vehicle.ws.send(JSON.stringify({
+                    type: "unsubscribe_topic",
+                    topic,
+                }));
+                console.log(`📡 vehicle로 unsubscribe 전달: ${topicKey}`);
+            }
         }
     }
+
+    if (subs.size === 0) {
+        topicSubscribers.delete(topicKey);
+        console.log(`Topic subscribers removed: ${topicKey}`);
+    }
 }
+
 
 module.exports = {
     handleSubscribe,

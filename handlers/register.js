@@ -16,6 +16,9 @@ function handleRegister(ws, message, vehicles, users) {
             return;
         }
 
+        const ip = ws._socket.remoteAddress;
+        const rosbridge_ip = message.rosbridge_ip;
+
         let session;
 
         if (vehicles.has(message.vehicle_id)) {
@@ -28,6 +31,8 @@ function handleRegister(ws, message, vehicles, users) {
             session.ws = ws;
             session.status = 'online';
             session.last_seen = Date.now();
+            session.ip = ip;
+            session.rosbridge_ip = rosbridge_ip;
 
             console.log(`Vehicle reconnected: ${message.vehicle_id}`);
 
@@ -35,13 +40,28 @@ function handleRegister(ws, message, vehicles, users) {
             session = {
                 ws: ws,
                 status: 'online',
-                last_seen: Date.now()
+                last_seen: Date.now(),
+                ip: ip,
+                rosbridge_ip: rosbridge_ip
             };
 
             vehicles.set(message.vehicle_id, session);
 
             console.log(`Vehicle registered: ${message.vehicle_id}`);
         }
+
+        users.forEach((userWs) => {
+            userWs.send(JSON.stringify({
+                type: 'vehicle_list',
+                vehicles: Array.from(vehicles.entries()).map(([id, v]) => ({
+                    id,
+                    rosbridge_ip: v.rosbridge_ip
+                }))
+            }));
+        });
+
+        console.log("vehicle ip: ", ip);
+        console.log("rosbridge:", rosbridge_ip);
 
         ws.clientInfo.role ='vehicle';
         ws.clientInfo.id = message.vehicle_id;

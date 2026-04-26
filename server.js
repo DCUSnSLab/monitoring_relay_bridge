@@ -2,8 +2,8 @@ const WebSocket = require('ws')
 
 const { vehicles } = require('./managers/vehicleManager');
 const { users } = require('./managers/userManager');
-const { subscriptions } = require('./managers/subscriptionManager');
-const topicCache = new Map();
+const { topicSubscribers, upstreamSubscriptions } = require('./managers/subscriptionManager');
+const { topicCache, pendingTopicListRequests } = require('./managers/topicStateManager');
 
 const { handleRegister } = require("./handlers/register");
 const { handleVehicleList } = require("./handlers/vehicle");
@@ -45,35 +45,39 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'subscribe':
-                    handleSubscribe(ws, message, vehicles, subscriptions, users, topicCache);
+                    // 필요한 경우만 차량에 요청(구독된 경우 요청x)
+                    handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions, users, topicCache);
 
-                    const vehicle = vehicles.get(message.vehicle_id);
+                    // 무조건 차량에 요청
+                    // handleSubscribe(ws, message, vehicles, subscriptions, users, topicCache);
 
-                    if (vehicle && vehicle.ws) {
-                        vehicle.ws.send(JSON.stringify({
-                            type: "subscribe_topic",
-                            topic: message.topic,
-                            msg_type: message.msg_type
-                        }));
-
-                        console.log("📡 vehicle로 subscribe 전달:", message.topic);
-                    }
+                    // const vehicle = vehicles.get(message.vehicle_id);
+                    //
+                    // if (vehicle && vehicle.ws) {
+                    //     vehicle.ws.send(JSON.stringify({
+                    //         type: "subscribe_topic",
+                    //         topic: message.topic,
+                    //         msg_type: message.msg_type
+                    //     }));
+                    //
+                    //     console.log("📡 vehicle로 subscribe 전달:", message.topic);
+                    // }
                     break;
 
                 case 'unsubscribe':
-                    handleUnsubscribe(ws, message, subscriptions);
+                    handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions);
                     break;
 
                 case 'sensor_data':
-                    handleSensorData(ws, message, vehicles, users, subscriptions);
+                    handleSensorData(ws, message, vehicles, users, topicSubscribers);
                     break;
 
                 case 'topic_list':
-                    handleTopicList(ws, message, users, subscriptions, topicCache);
+                    handleTopicList(ws, message, users, pendingTopicListRequests, topicCache);
                     break;
 
                 case 'get_topic_list':
-                    handleGetTopicList(ws, message, vehicles);
+                    handleGetTopicList(ws, message, vehicles, pendingTopicListRequests, topicCache);
                     break;
             }
 
@@ -96,18 +100,35 @@ wss.on('connection', (ws) => {
                 session.status = "offline";
                 session.ws = null;
             }
+            vehicles.delete(id);
         }
 
         if (role === 'user') {
             users.delete(id);
 
-            for (const [vehicleId, subs] of subscriptions) {
+            for (const [topicKey, subs] of topicSubscribers) {
+                if (!subs.has(id)) continue;
+
                 subs.delete(id);
+                console.log(`Session ${id} removed from ${topicKey}`);
+
+                const upstream = upstreamSubscriptions.get(topicKey);
+                if (upstream) {
+                    upstream.refCount -= 1;
+                    console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
+
+                    if (upstream.refCount <= 0) {
+                        upstreamSubscriptions.delete(topicKey);
+                        console.log(`Upstream subscription removed: ${topicKey}`);
+                    }
+                }
 
                 if (subs.size === 0) {
-                    subscriptions.delete(vehicleId);
+                    topicSubscribers.delete(topicKey);
+                    console.log(`Topic subscribers removed: ${topicKey}`);
                 }
             }
         }
+
     })
 })

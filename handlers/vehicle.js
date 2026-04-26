@@ -3,12 +3,17 @@
 
 // vehicle list (server -> user)
 function handleVehicleList(ws, vehicles) {
-    ws.send(JSON.stringify({
-        type: 'vehicle_list',
-        vehicles: [...vehicles.keys()]
+    const vehicleArray = Array.from(vehicles.entries()).map(([id, v]) => ({
+        id: id,
+        rosbridge_ip: v.rosbridge_ip
     }));
 
-    console.log(`Vehicle list: ${JSON.stringify(...vehicles.keys())}`);
+    ws.send(JSON.stringify({
+        type: 'vehicle_list',
+        vehicles: vehicleArray
+    }));
+
+    console.log(`Vehicle list: `, vehicleArray);
 }
 
 function handleVehicleDisconnect(ws, vehicles) {
