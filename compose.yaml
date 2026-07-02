@@ -1,0 +1,7 @@
+services:
+  relay-server:
+    build: .
+    image: relay-server:latest
+    container_name: relay-server
+    ports:
+      - "8080:8080"
