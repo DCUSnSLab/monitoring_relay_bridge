@@ -3,6 +3,7 @@ const { makeTopicKey } = require('../managers/subscriptionManager');
 // vehicle sensor data 관리
 
 function handleSensorData(ws, message, vehicles, users, topicSubscribers) {
+
     if (ws.clientInfo.role !== 'vehicle') {
         console.log('Only vehicles can send sensor data');
         return;
@@ -30,7 +31,7 @@ function handleSensorData(ws, message, vehicles, users, topicSubscribers) {
 
     const payload = JSON.stringify({
         ...message,
-        vehicle_id: vehicleId
+        vehicle_id: vehicleId,
     });
 
     for (const sessionId of subs) {
