@@ -18,7 +18,6 @@ console.log("Relay Server running on port 8080")
 wss.on('connection', (ws) => {
     console.log('Client connected')
 
-    //websocket 연결된 것이 식별하기 위해 저장하는 메타데이터
     ws.clientInfo = {
         role: null,
         id: null
