@@ -99,6 +99,8 @@ wss.on('connection', (ws) => {
                 session.status = "offline";
                 session.ws = null;
             }
+            topicCache.delete(id);
+
             vehicles.delete(id);
         }
 
