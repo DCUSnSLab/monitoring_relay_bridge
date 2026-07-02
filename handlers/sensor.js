@@ -1,7 +1,6 @@
 const { makeTopicKey } = require('../managers/subscriptionManager');
 
 // vehicle sensor data 관리
-
 function handleSensorData(ws, message, vehicles, users, topicSubscribers) {
 
     if (ws.clientInfo.role !== 'vehicle') {
