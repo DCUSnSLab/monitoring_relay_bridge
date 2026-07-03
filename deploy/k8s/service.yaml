@@ -1,0 +1,20 @@
+# Relay Server 외부 노출 — NodePort
+# 외부 접속: ws://<node-ip>:30808  (차량 + 브라우저 공통)
+# ※ NodePort 범위(30000-32767) 제약상 8080 은 불가 → 30808 사용.
+#   기존 관례(ws://203.250.32.54:8080)의 포트가 바뀌므로 차량 설정도 :30808 로 맞춰야 함.
+apiVersion: v1
+kind: Service
+metadata:
+  name: relay-server
+  labels:
+    app.kubernetes.io/name: relay-server
+    app.kubernetes.io/component: relay
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: relay-server
+  ports:
+    - name: ws
+      port: 8080
+      targetPort: 8080
+      nodePort: 30808

@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: autonomous
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+# 이미지 태그 placeholder — Jenkins 가 배포 시 newTag 를 BUILD_NUMBER 로 치환한 뒤 apply.
+images:
+  - name: harbor.cu.ac.kr/autonomousmonitoring/relay-server
+    newTag: latest

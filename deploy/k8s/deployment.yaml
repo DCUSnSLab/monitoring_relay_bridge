@@ -1,0 +1,55 @@
+# Relay Server — Node.js WebSocket 중계 서버 (:8080)
+# - 차량(ROS)과 브라우저(모니터링 UI)가 모두 이 서버에 직접 WS 로 접속한다.
+# - vehicles/users/subscriptions/topicCache 를 전부 "메모리"에 보관하는 상태ful 서버 →
+#   replicas=1 고정. 레플리카를 늘리면 차량이 A파드, 사용자가 B파드에 붙어 서로 못 본다.
+#   (수평확장하려면 sticky session + 공유 저장소(Redis) 필요 — 현 범위 밖)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay-server
+  labels:
+    app.kubernetes.io/name: relay-server
+    app.kubernetes.io/component: relay
+    app.kubernetes.io/part-of: autonomous-monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate            # 상태ful 싱글턴: 신·구 파드 동시 기동 방지
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: relay-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: relay-server
+        app.kubernetes.io/component: relay
+        app.kubernetes.io/part-of: autonomous-monitoring
+    spec:
+      containers:
+        - name: relay-server
+          image: harbor.cu.ac.kr/autonomousmonitoring/relay-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: ws
+          # 순수 WS 서버(HTTP 헬스 엔드포인트 없음) → TCP 소켓 프로브 사용
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
