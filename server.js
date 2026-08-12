@@ -8,12 +8,22 @@ const { topicCache, pendingTopicListRequests } = require('./managers/topicStateM
 const { handleRegister } = require("./handlers/register");
 const { handleVehicleList } = require("./handlers/vehicle");
 const { handleSubscribe, handleUnsubscribe } = require("./handlers/subscription");
-const { handleSensorData } = require("./handlers/sensor");
+const { handleSensorData, handleBinarySensorData } = require("./handlers/sensor");
 const { handleTopicList, handleGetTopicList } = require("./handlers/topic");
 
 const wss = new WebSocket.Server({ port: 8080 })
 
 console.log("Relay Server running on port 8080")
+
+// 드롭 로그: 5초마다 프레임을 버린 유저와 그 개수를 출력 (백프레셔 튜닝용)
+setInterval(() => {
+    for (const [id, userWs] of users) {
+        if (userWs._droppedFrames) {
+            console.log(`[drop] user=${id} dropped=${userWs._droppedFrames} buffered=${userWs.bufferedAmount}`);
+            userWs._droppedFrames = 0;
+        }
+    }
+}, 5000)
 
 wss.on('connection', (ws) => {
     console.log('Client connected')
@@ -23,8 +33,18 @@ wss.on('connection', (ws) => {
         id: null
     };
 
-    ws.on('message', (data) => {
+    ws.on('message', (data, isBinary) => {
         try{
+            // 바이너리 프레임(포인트 클라우드/카메라 등)은 JSON 파싱 없이 헤더만 읽어 팬아웃
+            if (isBinary) {
+                if (!ws.clientInfo.role) {
+                    console.log('Unregistered client tried to send binary data');
+                    return;
+                }
+                handleBinarySensorData(ws, data, vehicles, users, topicSubscribers);
+                return;
+            }
+
             const message = JSON.parse(data);
 
             // console.log("📦 raw:", data.toString());
