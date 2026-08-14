@@ -25,6 +25,25 @@ setInterval(() => {
     }
 }, 5000)
 
+// 하트비트: 주기적으로 모든 연결에 ping을 보내고,
+// 지난 주기에 pong 응답이 없던(죽은/half-open) 연결은 terminate하여 정리한다.
+const HEARTBEAT_INTERVAL_MS = 30000;
+const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+        if (ws.isAlive === false) {
+            console.log(`[heartbeat] dead connection terminated: role=${ws.clientInfo?.role} id=${ws.clientInfo?.id}`);
+            ws.terminate(); // 'close' 이벤트가 발생 → 기존 cleanup이 vehicles/users/구독 상태를 제거
+            continue;
+        }
+        ws.isAlive = false;
+        ws.ping();
+    }
+}, HEARTBEAT_INTERVAL_MS);
+
+wss.on('close', () => {
+    clearInterval(heartbeat);
+});
+
 wss.on('connection', (ws) => {
     console.log('Client connected')
 
@@ -32,6 +51,12 @@ wss.on('connection', (ws) => {
         role: null,
         id: null
     };
+
+    // 하트비트: 연결 생존 플래그. pong 응답을 받으면 살아있는 것으로 표시.
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
 
     ws.on('message', (data, isBinary) => {
         try{
