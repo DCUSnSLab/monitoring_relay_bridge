@@ -9,7 +9,7 @@ const { handleRegister } = require("./handlers/register");
 const { handleVehicleList } = require("./handlers/vehicle");
 const { handleSubscribe, handleUnsubscribe } = require("./handlers/subscription");
 const { handleSensorData, handleBinarySensorData } = require("./handlers/sensor");
-const { handleTopicList, handleGetTopicList } = require("./handlers/topic");
+const { handleTopicList, handleGetTopicList, handleStopTopicList } = require("./handlers/topic");
 
 const wss = new WebSocket.Server({ port: 8080 })
 
@@ -141,6 +141,10 @@ wss.on('connection', (ws) => {
 
                 case 'get_topic_list':
                     handleGetTopicList(ws, message, vehicles, pendingTopicListRequests, topicCache);
+                    break;
+
+                case 'stop_topic_list':
+                    handleStopTopicList(ws, message, pendingTopicListRequests);
                     break;
             }
 

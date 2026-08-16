@@ -65,7 +65,24 @@ function handleTopicList(ws, message, users, pendingTopicListRequests, topicCach
     // watcher를 지우지 않는다 → 이후 토픽 변경 시에도 계속 갱신 전달
 }
 
+// 유저가 특정 차량 보기를 종료할 때: topic_list 갱신 대상(watcher)에서 제거
+function handleStopTopicList(ws, message, pendingTopicListRequests) {
+    const vehicleId = message.vehicle_id;
+    const sessionId = ws.clientInfo.id;
+    if (!vehicleId) return;
+
+    const watchers = pendingTopicListRequests.get(vehicleId);
+    if (!watchers) return;
+
+    watchers.delete(sessionId);
+    if (watchers.size === 0) {
+        pendingTopicListRequests.delete(vehicleId);
+    }
+    console.log(`🛑 topic_list watcher 제거: ${vehicleId} <- ${sessionId}`);
+}
+
 module.exports = {
     handleGetTopicList,
-    handleTopicList
+    handleTopicList,
+    handleStopTopicList
 };
