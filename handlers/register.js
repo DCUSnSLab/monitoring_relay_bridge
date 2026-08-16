@@ -1,6 +1,9 @@
 // vehicle, user 등록
 
-function handleRegister(ws, message, vehicles, users) {
+const { broadcastVehicleList } = require('./vehicle');
+const { safeSend } = require('../utils/websocket');
+
+function handleRegister(ws, message, vehicles, users, upstreamSubscriptions) {
     if (ws.clientInfo.role) {
         return;
     }
@@ -33,8 +36,9 @@ function handleRegister(ws, message, vehicles, users) {
             session.last_seen = Date.now();
             session.ip = ip;
             session.rosbridge_ip = rosbridge_ip;
+            session.is_bag = !!message.is_bag;
 
-            console.log(`Vehicle reconnected: ${message.vehicle_id}`);
+            console.log(`Vehicle reconnected: ${message.vehicle_id} (is_bag=${!!message.is_bag})`);
 
         } else {
             session = {
@@ -42,29 +46,41 @@ function handleRegister(ws, message, vehicles, users) {
                 status: 'online',
                 last_seen: Date.now(),
                 ip: ip,
-                rosbridge_ip: rosbridge_ip
+                rosbridge_ip: rosbridge_ip,
+                is_bag: !!message.is_bag
             };
 
             vehicles.set(message.vehicle_id, session);
 
-            console.log(`Vehicle registered: ${message.vehicle_id}`);
+            console.log(`Vehicle registered: ${message.vehicle_id} (is_bag=${!!message.is_bag})`);
         }
 
-        users.forEach((userWs) => {
-            userWs.send(JSON.stringify({
-                type: 'vehicle_list',
-                vehicles: Array.from(vehicles.entries()).map(([id, v]) => ({
-                    id,
-                    rosbridge_ip: v.rosbridge_ip
-                }))
-            }));
-        });
+        if (message.is_bag) {
+            console.log(`📼 BAG source connected: ${message.vehicle_id}`);
+        }
+
+        broadcastVehicleList(users, vehicles);
 
         console.log("vehicle ip: ", ip);
         console.log("rosbridge:", rosbridge_ip);
 
         ws.clientInfo.role ='vehicle';
         ws.clientInfo.id = message.vehicle_id;
+
+        // 차량 소켓은 연결이 바뀌면 기존 upstream 구독을 알지 못하므로,
+        // 현재 참조 중인 구독을 새 소켓에 모두 다시 전달한다.
+        for (const upstream of upstreamSubscriptions.values()) {
+            if (upstream.vehicleId !== message.vehicle_id || upstream.refCount <= 0) {
+                continue;
+            }
+
+            safeSend(ws, JSON.stringify({
+                type: 'subscribe_topic',
+                topic: upstream.topic,
+                msg_type: upstream.msgType,
+            }), 'subscription replay');
+            console.log(`Replayed vehicle subscription: ${message.vehicle_id}::${upstream.topic}`);
+        }
 
         console.log('Connected vehicle:', vehicles.size);
     }
