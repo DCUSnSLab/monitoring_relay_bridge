@@ -171,6 +171,13 @@ wss.on('connection', (ws) => {
         if (role === 'user') {
             users.delete(id);
 
+            // topic_list 갱신 대상(watcher)에서도 제거
+            for (const [vid, watchers] of pendingTopicListRequests) {
+                if (watchers.delete(id) && watchers.size === 0) {
+                    pendingTopicListRequests.delete(vid);
+                }
+            }
+
             for (const [topicKey, subs] of topicSubscribers) {
                 if (!subs.has(id)) continue;
 
