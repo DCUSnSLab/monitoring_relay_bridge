@@ -25,20 +25,35 @@ setInterval(() => {
     }
 }, 5000)
 
-// 하트비트: 주기적으로 모든 연결에 ping을 보내고,
-// 지난 주기에 pong 응답이 없던(죽은/half-open) 연결은 terminate하여 정리한다.
-const HEARTBEAT_INTERVAL_MS = 30000;
+// 하트비트: 1초마다 모든 연결에 ping. 30초(30회) 연속 pong이 없으면 죽은 것으로 보고 terminate.
+// 동시에 차량별 연결 상태(last_seen 기준)를 유저에게 broadcast → 대시보드가 색상으로 표시.
+const PING_INTERVAL_MS = 1000;
+const DEAD_AFTER_MISSED = 30; // 30 * 1s = 30초
 const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
-        if (ws.isAlive === false) {
+        if ((ws.missedPongs || 0) >= DEAD_AFTER_MISSED) {
             console.log(`[heartbeat] dead connection terminated: role=${ws.clientInfo?.role} id=${ws.clientInfo?.id}`);
             ws.terminate(); // 'close' 이벤트가 발생 → 기존 cleanup이 vehicles/users/구독 상태를 제거
             continue;
         }
-        ws.isAlive = false;
+        ws.missedPongs = (ws.missedPongs || 0) + 1;
         ws.ping();
     }
-}, HEARTBEAT_INTERVAL_MS);
+
+    // 차량 연결 상태 broadcast (대시보드 색상 표시용)
+    // msAgo = 마지막으로 살아있음을 확인한 뒤 경과 시간(ms). null이면 아직 응답 없음.
+    const now = Date.now();
+    const statuses = [];
+    for (const [id, session] of vehicles) {
+        statuses.push({ id, msAgo: session.last_seen ? now - session.last_seen : null });
+    }
+    const statusMsg = JSON.stringify({ type: 'vehicle_status', statuses });
+    for (const userWs of users.values()) {
+        if (userWs.readyState === 1) {
+            userWs.send(statusMsg);
+        }
+    }
+}, PING_INTERVAL_MS);
 
 wss.on('close', () => {
     clearInterval(heartbeat);
@@ -52,10 +67,14 @@ wss.on('connection', (ws) => {
         id: null
     };
 
-    // 하트비트: 연결 생존 플래그. pong 응답을 받으면 살아있는 것으로 표시.
-    ws.isAlive = true;
+    // 하트비트: 연결 생존 추적. pong을 받으면 미응답 카운트 리셋 + (차량이면) last_seen 갱신.
+    ws.missedPongs = 0;
     ws.on('pong', () => {
-        ws.isAlive = true;
+        ws.missedPongs = 0;
+        if (ws.clientInfo.role === 'vehicle' && ws.clientInfo.id) {
+            const session = vehicles.get(ws.clientInfo.id);
+            if (session) session.last_seen = Date.now();
+        }
     });
 
     ws.on('message', (data, isBinary) => {
