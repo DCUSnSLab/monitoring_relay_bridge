@@ -33,8 +33,9 @@ function handleRegister(ws, message, vehicles, users) {
             session.last_seen = Date.now();
             session.ip = ip;
             session.rosbridge_ip = rosbridge_ip;
+            session.is_bag = !!message.is_bag;
 
-            console.log(`Vehicle reconnected: ${message.vehicle_id}`);
+            console.log(`Vehicle reconnected: ${message.vehicle_id} (is_bag=${!!message.is_bag})`);
 
         } else {
             session = {
@@ -42,12 +43,17 @@ function handleRegister(ws, message, vehicles, users) {
                 status: 'online',
                 last_seen: Date.now(),
                 ip: ip,
-                rosbridge_ip: rosbridge_ip
+                rosbridge_ip: rosbridge_ip,
+                is_bag: !!message.is_bag
             };
 
             vehicles.set(message.vehicle_id, session);
 
-            console.log(`Vehicle registered: ${message.vehicle_id}`);
+            console.log(`Vehicle registered: ${message.vehicle_id} (is_bag=${!!message.is_bag})`);
+        }
+
+        if (message.is_bag) {
+            console.log(`📼 BAG source connected: ${message.vehicle_id}`);
         }
 
         users.forEach((userWs) => {
@@ -55,7 +61,8 @@ function handleRegister(ws, message, vehicles, users) {
                 type: 'vehicle_list',
                 vehicles: Array.from(vehicles.entries()).map(([id, v]) => ({
                     id,
-                    rosbridge_ip: v.rosbridge_ip
+                    rosbridge_ip: v.rosbridge_ip,
+                    is_bag: v.is_bag
                 }))
             }));
         });

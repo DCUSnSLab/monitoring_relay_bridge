@@ -5,7 +5,8 @@
 function handleVehicleList(ws, vehicles) {
     const vehicleArray = Array.from(vehicles.entries()).map(([id, v]) => ({
         id: id,
-        rosbridge_ip: v.rosbridge_ip
+        rosbridge_ip: v.rosbridge_ip,
+        is_bag: v.is_bag
     }));
 
     ws.send(JSON.stringify({
