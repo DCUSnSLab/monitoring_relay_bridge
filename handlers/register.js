@@ -2,6 +2,11 @@
 
 const { broadcastVehicleList } = require('./vehicle');
 const { safeSend } = require('../utils/websocket');
+const {
+    topicSubscribers,
+    topicMsgTypes,
+    makeTopicKey,
+} = require('../managers/subscriptionManager');
 
 // IPv4-mapped IPv6(::ffff:1.2.3.4) → 1.2.3.4 로 정리
 function normalizeIp(addr) {
@@ -82,19 +87,32 @@ function handleRegister(ws, message, vehicles, users, upstreamSubscriptions) {
         ws.clientInfo.role ='vehicle';
         ws.clientInfo.id = vehicleId;
 
-        // 차량 소켓은 연결이 바뀌면 기존 upstream 구독을 알지 못하므로,
-        // 현재 참조 중인 구독을 새 소켓에 모두 다시 전달한다.
-        for (const upstream of upstreamSubscriptions.values()) {
-            if (upstream.vehicleId !== vehicleId || upstream.refCount <= 0) {
+        // 차량 소켓은 연결이 바뀌면 기존 구독을 알지 못하므로,
+        // 현재 구독 의도(topicSubscribers)를 새 소켓에 다시 전달하고 upstream을 재구성한다.
+        // (차량 종료 시 upstream은 정리되지만 topicSubscribers/topicMsgTypes는 유지됨)
+        const prefix = makeTopicKey(vehicleId, '');
+        for (const [topicKey, subs] of topicSubscribers) {
+            if (!topicKey.startsWith(prefix) || !subs || subs.size === 0) {
                 continue;
             }
 
+            const topic = topicKey.slice(prefix.length);
+            const msgType = topicMsgTypes.get(topicKey);
+
+            // upstream(차량에 실제 구독 건 상태) 재구성
+            upstreamSubscriptions.set(topicKey, {
+                vehicleId,
+                topic,
+                msgType,
+                refCount: subs.size,
+            });
+
             safeSend(ws, JSON.stringify({
                 type: 'subscribe_topic',
-                topic: upstream.topic,
-                msg_type: upstream.msgType,
+                topic,
+                msg_type: msgType,
             }), 'subscription replay');
-            console.log(`Replayed vehicle subscription: ${vehicleId}::${upstream.topic}`);
+            console.log(`Replayed vehicle subscription: ${topicKey} (subs=${subs.size})`);
         }
 
         console.log('Connected vehicle:', vehicles.size);

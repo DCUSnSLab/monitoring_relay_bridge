@@ -4,6 +4,7 @@ const { vehicles } = require('./managers/vehicleManager');
 const { users } = require('./managers/userManager');
 const {
     topicSubscribers,
+    topicMsgTypes,
     upstreamSubscriptions,
     logCurrentUpstreamSubscriptions,
 } = require('./managers/subscriptionManager');
@@ -212,6 +213,16 @@ wss.on('connection', (ws) => {
             session.ws = null;
             topicCache.delete(id);
 
+            // 차량이 사라졌으므로 '차량에 실제 구독을 걸었다'는 upstream 상태는 정리한다.
+            // 단, 구독 의도(topicSubscribers)와 msg_type(topicMsgTypes)은 유지 →
+            // 같은 id로 재접속하면 register 에서 다시 subscribe_topic 을 replay 한다.
+            for (const [topicKey, upstream] of upstreamSubscriptions) {
+                if (upstream.vehicleId === id) {
+                    upstreamSubscriptions.delete(topicKey);
+                    console.log(`Upstream cleared on vehicle disconnect: ${topicKey}`);
+                }
+            }
+
             vehicles.delete(id);
             broadcastVehicleList(users, vehicles);
         }
@@ -246,6 +257,17 @@ wss.on('connection', (ws) => {
                     console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
 
                     if (upstream.refCount <= 0) {
+                        // 마지막 구독자가 나갔으므로 차량에도 구독 해제를 알려
+                        // 차량이 계속 송신(포인트클라우드/카메라 등)하는 것을 막는다.
+                        const vehicle = vehicles.get(upstream.vehicleId);
+                        if (vehicle && vehicle.ws) {
+                            safeSend(vehicle.ws, JSON.stringify({
+                                type: "unsubscribe_topic",
+                                topic: upstream.topic,
+                            }), 'unsubscribe on user disconnect');
+                            console.log(`📡 vehicle로 unsubscribe 전달(user 종료): ${topicKey}`);
+                        }
+
                         upstreamSubscriptions.delete(topicKey);
                         console.log(`Upstream subscription removed: ${topicKey}`);
                     }
@@ -253,6 +275,7 @@ wss.on('connection', (ws) => {
 
                 if (subs.size === 0) {
                     topicSubscribers.delete(topicKey);
+                    topicMsgTypes.delete(topicKey);
                     console.log(`Topic subscribers removed: ${topicKey}`);
                 }
             }

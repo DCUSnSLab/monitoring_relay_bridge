@@ -7,6 +7,15 @@ Map<topicKey, Set<sessionId>>
 "car_1::/imu/data" => Set(["sess_1", "sess_2"])
 */
 
+// 토픽별 msg_type 보관 (차량 종료로 upstream을 지워도, 재접속 replay 시 subscribe_topic에 필요)
+const topicMsgTypes = new Map();
+/*
+Map<topicKey, msgType>
+
+예:
+"car_1::/imu/data" => "sensor_msgs/msg/Imu"
+*/
+
 // 토픽을 차량에 실제 구독 걸었는지 저장
 const upstreamSubscriptions = new Map();
 /*
@@ -46,6 +55,7 @@ function logCurrentUpstreamSubscriptions(subscriptions) {
 
 module.exports = {
     topicSubscribers,
+    topicMsgTypes,
     upstreamSubscriptions,
     makeTopicKey,
     logCurrentUpstreamSubscriptions,

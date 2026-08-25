@@ -1,6 +1,7 @@
 const {
     makeTopicKey,
     logCurrentUpstreamSubscriptions,
+    topicMsgTypes,
 } = require('../managers/subscriptionManager');
 
 const PERSISTENT_TOPICS = new Set(['/ublox_gps_node/fix']);
@@ -39,6 +40,8 @@ function handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscr
     }
 
     subs.add(sessionId);
+    // 재접속 replay 때 subscribe_topic에 msg_type이 필요하므로 보관
+    topicMsgTypes.set(topicKey, msgType);
     console.log(`Session ${sessionId} subscribed to ${topicKey}`);
     console.log(`Subscribers for ${topicKey}: (${subs.size}) ${[...subs]}`);
 
@@ -123,6 +126,7 @@ function handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubs
 
     if (subs.size === 0) {
         topicSubscribers.delete(topicKey);
+        topicMsgTypes.delete(topicKey);
         console.log(`Topic subscribers removed: ${topicKey}`);
     }
 
