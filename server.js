@@ -2,7 +2,12 @@ const WebSocket = require('ws')
 
 const { vehicles } = require('./managers/vehicleManager');
 const { users } = require('./managers/userManager');
-const { topicSubscribers, upstreamSubscriptions } = require('./managers/subscriptionManager');
+const {
+    topicSubscribers,
+    topicMsgTypes,
+    upstreamSubscriptions,
+    logCurrentUpstreamSubscriptions,
+} = require('./managers/subscriptionManager');
 const { topicCache, pendingTopicListRequests } = require('./managers/topicStateManager');
 
 const { handleRegister } = require("./handlers/register");
@@ -11,6 +16,7 @@ const { handleSubscribe, handleUnsubscribe } = require("./handlers/subscription"
 const { handleSensorData, handleBinarySensorData } = require("./handlers/sensor");
 const { handleTopicList, handleGetTopicList, handleStopTopicList } = require("./handlers/topic");
 const { safePing, safeSend } = require('./utils/websocket');
+const { clearLoggingRequestsForClient, handleLoggingRequest, handleLoggingResponse } = require("./handlers/logging");
 
 const PORT = Number(process.env.PORT || 8080);
 const wss = new WebSocket.Server({ port: PORT })
@@ -170,6 +176,14 @@ wss.on('connection', (ws) => {
                 case 'stop_topic_list':
                     handleStopTopicList(ws, message, pendingTopicListRequests);
                     break;
+
+                case 'logging_request':
+                    handleLoggingRequest(ws, message, vehicles, users);
+                    break;
+
+                case 'logging_response':
+                    handleLoggingResponse(ws, message, users);
+                    break;
             }
 
 
@@ -181,6 +195,8 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         const role = ws.clientInfo.role;
         const id = ws.clientInfo.id;
+
+        clearLoggingRequestsForClient(role, id, users);
 
         console.log(`${role} disconnected: ${id}`);
 
@@ -197,6 +213,16 @@ wss.on('connection', (ws) => {
             session.ws = null;
             topicCache.delete(id);
 
+            // 차량이 사라졌으므로 '차량에 실제 구독을 걸었다'는 upstream 상태는 정리한다.
+            // 단, 구독 의도(topicSubscribers)와 msg_type(topicMsgTypes)은 유지 →
+            // 같은 id로 재접속하면 register 에서 다시 subscribe_topic 을 replay 한다.
+            for (const [topicKey, upstream] of upstreamSubscriptions) {
+                if (upstream.vehicleId === id) {
+                    upstreamSubscriptions.delete(topicKey);
+                    console.log(`Upstream cleared on vehicle disconnect: ${topicKey}`);
+                }
+            }
+
             vehicles.delete(id);
             broadcastVehicleList(users, vehicles);
         }
@@ -208,6 +234,7 @@ wss.on('connection', (ws) => {
                 return;
             }
 
+            let subscriptionsChanged = false;
             users.delete(id);
 
             // topic_list 갱신 대상(watcher)에서도 제거
@@ -221,6 +248,7 @@ wss.on('connection', (ws) => {
                 if (!subs.has(id)) continue;
 
                 subs.delete(id);
+                subscriptionsChanged = true;
                 console.log(`Session ${id} removed from ${topicKey}`);
 
                 const upstream = upstreamSubscriptions.get(topicKey);
@@ -229,6 +257,17 @@ wss.on('connection', (ws) => {
                     console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
 
                     if (upstream.refCount <= 0) {
+                        // 마지막 구독자가 나갔으므로 차량에도 구독 해제를 알려
+                        // 차량이 계속 송신(포인트클라우드/카메라 등)하는 것을 막는다.
+                        const vehicle = vehicles.get(upstream.vehicleId);
+                        if (vehicle && vehicle.ws) {
+                            safeSend(vehicle.ws, JSON.stringify({
+                                type: "unsubscribe_topic",
+                                topic: upstream.topic,
+                            }), 'unsubscribe on user disconnect');
+                            console.log(`📡 vehicle로 unsubscribe 전달(user 종료): ${topicKey}`);
+                        }
+
                         upstreamSubscriptions.delete(topicKey);
                         console.log(`Upstream subscription removed: ${topicKey}`);
                     }
@@ -236,8 +275,13 @@ wss.on('connection', (ws) => {
 
                 if (subs.size === 0) {
                     topicSubscribers.delete(topicKey);
+                    topicMsgTypes.delete(topicKey);
                     console.log(`Topic subscribers removed: ${topicKey}`);
                 }
+            }
+
+            if (subscriptionsChanged) {
+                logCurrentUpstreamSubscriptions(upstreamSubscriptions);
             }
         }
 

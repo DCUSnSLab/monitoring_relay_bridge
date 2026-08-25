@@ -1,4 +1,10 @@
-const { makeTopicKey } = require('../managers/subscriptionManager');
+const {
+    makeTopicKey,
+    logCurrentUpstreamSubscriptions,
+    topicMsgTypes,
+} = require('../managers/subscriptionManager');
+
+const PERSISTENT_TOPICS = new Set(['/ublox_gps_node/fix']);
 
 function handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions, users, topicCache) {
     if (ws.clientInfo.role !== 'user') {
@@ -34,6 +40,8 @@ function handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscr
     }
 
     subs.add(sessionId);
+    // 재접속 replay 때 subscribe_topic에 msg_type이 필요하므로 보관
+    topicMsgTypes.set(topicKey, msgType);
     console.log(`Session ${sessionId} subscribed to ${topicKey}`);
     console.log(`Subscribers for ${topicKey}: (${subs.size}) ${[...subs]}`);
 
@@ -64,6 +72,7 @@ function handleSubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscr
 
     upstream.refCount += 1;
     console.log(`Upstream refCount for ${topicKey}: ${upstream.refCount}`);
+    logCurrentUpstreamSubscriptions(upstreamSubscriptions);
 }
 
 function handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubscriptions) {
@@ -80,6 +89,11 @@ function handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubs
     const topic = message.topic;
     const sessionId = ws.clientInfo.id;
     const topicKey = makeTopicKey(vehicleId, topic);
+
+    if (PERSISTENT_TOPICS.has(topic) && message.force !== true) {
+        console.log(`Persistent topic unsubscribe ignored: ${topicKey}`);
+        return;
+    }
 
     const subs = topicSubscribers.get(topicKey);
     if (!subs || !subs.has(sessionId)) {
@@ -112,8 +126,11 @@ function handleUnsubscribe(ws, message, vehicles, topicSubscribers, upstreamSubs
 
     if (subs.size === 0) {
         topicSubscribers.delete(topicKey);
+        topicMsgTypes.delete(topicKey);
         console.log(`Topic subscribers removed: ${topicKey}`);
     }
+
+    logCurrentUpstreamSubscriptions(upstreamSubscriptions);
 }
 
 

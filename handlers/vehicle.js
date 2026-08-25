@@ -6,7 +6,6 @@ const { safeSend } = require('../utils/websocket');
 function makeVehicleListMessage(vehicles) {
     const vehicleArray = Array.from(vehicles.entries()).map(([id, v]) => ({
         id,
-        rosbridge_ip: v.rosbridge_ip,
         is_bag: v.is_bag,
     }));
 
