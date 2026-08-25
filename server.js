@@ -2,7 +2,11 @@ const WebSocket = require('ws')
 
 const { vehicles } = require('./managers/vehicleManager');
 const { users } = require('./managers/userManager');
-const { topicSubscribers, upstreamSubscriptions } = require('./managers/subscriptionManager');
+const {
+    topicSubscribers,
+    upstreamSubscriptions,
+    logCurrentUpstreamSubscriptions,
+} = require('./managers/subscriptionManager');
 const { topicCache, pendingTopicListRequests } = require('./managers/topicStateManager');
 
 const { handleRegister } = require("./handlers/register");
@@ -219,6 +223,7 @@ wss.on('connection', (ws) => {
                 return;
             }
 
+            let subscriptionsChanged = false;
             users.delete(id);
 
             // topic_list 갱신 대상(watcher)에서도 제거
@@ -232,6 +237,7 @@ wss.on('connection', (ws) => {
                 if (!subs.has(id)) continue;
 
                 subs.delete(id);
+                subscriptionsChanged = true;
                 console.log(`Session ${id} removed from ${topicKey}`);
 
                 const upstream = upstreamSubscriptions.get(topicKey);
@@ -249,6 +255,10 @@ wss.on('connection', (ws) => {
                     topicSubscribers.delete(topicKey);
                     console.log(`Topic subscribers removed: ${topicKey}`);
                 }
+            }
+
+            if (subscriptionsChanged) {
+                logCurrentUpstreamSubscriptions(upstreamSubscriptions);
             }
         }
 

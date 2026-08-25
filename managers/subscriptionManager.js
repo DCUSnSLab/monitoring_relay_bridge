@@ -30,8 +30,23 @@ function makeTopicKey(vehicleId, topic) {
     return `${vehicleId}::${topic}`;
 }
 
+function logCurrentUpstreamSubscriptions(subscriptions) {
+    const separator = '='.repeat(72);
+    const topicKeys = [...subscriptions.entries()]
+        .filter(([, subscription]) => subscription.refCount > 0)
+        .map(([topicKey]) => topicKey)
+        .sort((left, right) => left.localeCompare(right));
+
+    console.log(separator);
+    console.log('현재 구독중인 토픽명');
+    console.log('-'.repeat(72));
+    console.log(topicKeys.length > 0 ? topicKeys.join('\n') : '(없음)');
+    console.log(separator);
+}
+
 module.exports = {
     topicSubscribers,
     upstreamSubscriptions,
     makeTopicKey,
+    logCurrentUpstreamSubscriptions,
 };
