@@ -109,6 +109,17 @@ function handleBinarySensorData(ws, data, vehicles, users, topicSubscribers) {
         return;
     }
 
+    // 릴레이가 id를 재지정(빈 id→IP, 중복→IP 부착)한 경우, 바이너리 헤더의 vehicle_id도
+    // 실제 라우팅 id로 맞춰 대시보드가 올바르게 매칭하게 한다. (재지정 없으면 원본 그대로 = 복사 없음)
+    let outData = data;
+    if (header.vehicle_id !== vehicleId) {
+        header.vehicle_id = vehicleId;
+        const headerBuf = Buffer.from(JSON.stringify(header), 'utf8');
+        const lenBuf = Buffer.allocUnsafe(2);
+        lenBuf.writeUInt16BE(headerBuf.length, 0);
+        outData = Buffer.concat([lenBuf, headerBuf, data.subarray(2 + headerLen)]);
+    }
+
     for (const sessionId of subs) {
         const userWs = users.get(sessionId);
 
@@ -122,8 +133,8 @@ function handleBinarySensorData(ws, data, vehicles, users, topicSubscribers) {
             continue;
         }
 
-        // 같은 원본 버퍼를 모든 구독자에게 재사용(복사 없음), 바이너리 프레임으로 전송
-        userWs.send(data, { binary: true });
+        // 같은 버퍼를 모든 구독자에게 재사용, 바이너리 프레임으로 전송
+        userWs.send(outData, { binary: true });
     }
 }
 

@@ -11,6 +11,7 @@ const { handleSubscribe, handleUnsubscribe } = require("./handlers/subscription"
 const { handleSensorData, handleBinarySensorData } = require("./handlers/sensor");
 const { handleTopicList, handleGetTopicList, handleStopTopicList } = require("./handlers/topic");
 const { safePing, safeSend } = require('./utils/websocket');
+const { clearLoggingRequestsForClient, handleLoggingRequest, handleLoggingResponse } = require("./handlers/logging");
 
 const PORT = Number(process.env.PORT || 8080);
 const wss = new WebSocket.Server({ port: PORT })
@@ -170,6 +171,14 @@ wss.on('connection', (ws) => {
                 case 'stop_topic_list':
                     handleStopTopicList(ws, message, pendingTopicListRequests);
                     break;
+
+                case 'logging_request':
+                    handleLoggingRequest(ws, message, vehicles, users);
+                    break;
+
+                case 'logging_response':
+                    handleLoggingResponse(ws, message, users);
+                    break;
             }
 
 
@@ -181,6 +190,8 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         const role = ws.clientInfo.role;
         const id = ws.clientInfo.id;
+
+        clearLoggingRequestsForClient(role, id, users);
 
         console.log(`${role} disconnected: ${id}`);
 
